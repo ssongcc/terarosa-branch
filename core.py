@@ -221,14 +221,20 @@ def build_workbook(res, src_name=""):
                 f'=SUMIFS(C{start}:C{end},G{start}:G{end},">0")', f'=SUMIFS(D{start}:D{end},G{start}:G{end},">0")',
                 f'=SUMIFS(E{start}:E{end},G{start}:G{end},">0")', f'=SUMIFS(F{start}:F{end},G{start}:G{end},">0")',
                 f"=SUM(G{start}:G{end})", f"업로드용 행수: {len(upload)}"])
-    r = ws2.max_row
-    for c in range(1, 9):
-        cell = ws2.cell(r, c)
-        cell.font = Font(name="맑은 고딕", size=10, bold=True, color=TERRA)
-        cell.fill = PatternFill("solid", fgColor=LINEN)
-        cell.border = bd
-        if c in (3, 5):
-            cell.number_format = "0.##"
+    # 강릉 지점 소계 / 전체 총량(강릉 포함)
+    ws2.append(["강릉 지점 소계", "",
+                f'=SUMIFS(C{start}:C{end},H{start}:H{end},"강릉 지점 제외")', "",
+                f'=SUMIFS(E{start}:E{end},H{start}:H{end},"강릉 지점 제외")', "", "", "우체국 접수 제외"])
+    ws2.append(["전체 총량 (강릉 포함)", "",
+                f"=SUM(C{start}:C{end})", "", f"=SUM(E{start}:E{end})", "", "", "발주서 전 지점 합계"])
+    for r in range(ws2.max_row - 2, ws2.max_row + 1):
+        for c in range(1, 9):
+            cell = ws2.cell(r, c)
+            cell.font = Font(name="맑은 고딕", size=10, bold=True, color=TERRA)
+            cell.fill = PatternFill("solid", fgColor=LINEN)
+            cell.border = bd
+            if c in (3, 5):
+                cell.number_format = "0.##"
     if skipped:
         ws2.append([])
         ws2.append(["※ 중량표기 없어 제외된 품목: " + ", ".join(skipped)])
