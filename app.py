@@ -48,7 +48,8 @@ with st.sidebar:
     st.markdown(
         "1. 오늘 **지점원두발주서**(.xlsx)를 올립니다\n"
         "2. 빨간 경고(주소 미등록 지점)가 있는지 확인합니다\n"
-        "3. **접수파일 다운로드** → 우체국에 업로드\n"
+        "3. **우체국 접수파일** → 우체국에 업로드\n"
+        "4. **포장표** → 인쇄해서 박스 포장할 때 사용\n"
     )
     st.divider()
     st.subheader("박스 기준")
@@ -129,13 +130,33 @@ for col, key, label in ((c3, "어센틱1kg(kg)", "어센틱 1kg 총량"), (c4, "
     col.metric(label, f"{tot:g}kg")
     col.caption(f"우체국 {ship:g}kg · 강릉 {gang:g}kg" + (f" · 미접수 {etc:g}kg" if etc > 0 else ""))
 
-fname = f"{res['mmdd']}_지점원두우체국접수파일.xlsx"
-st.download_button(
-    "⬇️ 접수파일 다운로드", data=core.build_workbook(res, order_up.name),
-    file_name=fname, type="primary", use_container_width=True,
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+d1, d2 = st.columns(2)
+d1.download_button(
+    "⬇️ 우체국 접수파일", data=core.build_workbook(res, order_up.name),
+    file_name=f"{res['mmdd']}_지점원두우체국접수파일.xlsx", type="primary",
+    use_container_width=True, mime=XLSX)
+d2.download_button(
+    "📋 포장표 (박스 배분용)", data=core.build_packing(res, order_up.name),
+    file_name=f"{res['mmdd']}_지점원두포장표.xlsx", type="primary",
+    use_container_width=True, mime=XLSX)
 
-tab1, tab2 = st.tabs(["지점별 박스", "송장 미리보기"])
+tab1, tab3, tab2 = st.tabs(["지점별 박스", "박스별 구성", "송장 미리보기"])
+with tab3:
+    lab = lambda d: d["branch"] + (" (강릉)" if d.get("local") else "")
+    names = [lab(d) for d in res["detail"]]
+    pick = st.selectbox("지점 선택", ["전체"] + names)
+    rows = []
+    for d in res["detail"]:
+        if pick != "전체" and lab(d) != pick:
+            continue
+        for b in d["boxes"]:
+            for i, (nm, q, kg) in enumerate(b["lines"]):
+                rows.append([lab(d) if i == 0 else "", b["label"] if i == 0 else "", b["kind"] if i == 0 else "",
+                             nm, q, f"{kg:g}", f"{b['kg']:g}" if i == 0 else ""])
+    st.dataframe(pd.DataFrame(rows, columns=["지점", "박스", "구분", "품명", "수량(EA)", "중량(kg)", "박스 중량(kg)"]),
+                 hide_index=True, use_container_width=True, height=500,
+                 )
 with tab1:
     show_all = st.toggle("제외·발주없음 지점도 보기", value=False)
     view = summary if show_all else target
