@@ -121,8 +121,13 @@ if res["missing"]:
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("접수 지점", f"{len(target)}곳")
 c2.metric("총 박스", f"{len(res['upload'])}박스")
-c3.metric("어센틱 1kg", f"{target['어센틱1kg(kg)'].sum():g}kg")
-c4.metric("기타 원두", f"{target['기타원두(kg)'].sum():g}kg")
+# 중량 총량 = 발주서 전체 지점(강릉권 포함) 합계
+gn = summary[summary["비고"] == "강릉 지점 제외"]
+for col, key, label in ((c3, "어센틱1kg(kg)", "어센틱 1kg 총량"), (c4, "기타원두(kg)", "기타 원두 총량")):
+    tot, ship, gang = round(summary[key].sum(), 3), round(target[key].sum(), 3), round(gn[key].sum(), 3)
+    etc = round(tot - ship - gang, 3)
+    col.metric(label, f"{tot:g}kg")
+    col.caption(f"우체국 {ship:g}kg · 강릉 {gang:g}kg" + (f" · 미접수 {etc:g}kg" if etc > 0 else ""))
 
 fname = f"{res['mmdd']}_지점원두우체국접수파일.xlsx"
 st.download_button(
