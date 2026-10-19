@@ -3,8 +3,10 @@
 import os, datetime
 from zoneinfo import ZoneInfo
 import pandas as pd
+import importlib
 import streamlit as st
 import core
+importlib.reload(core)   # core.py만 바꿔 올려도 바로 반영되도록 매번 다시 불러옴
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_ADDR = os.path.join(BASE, "지점우체국택배접수주소.xlsx")
