@@ -460,6 +460,105 @@ def build_packing(res, src_name=""):
     ws.page_margins.left = ws.page_margins.right = 0.3
     ws.page_margins.top = ws.page_margins.bottom = 0.4
 
+    # ── ①-2 원두별 분배 : 원두(품명) 하나씩 집어서 지점 박스에 뿌리는 순서 ──
+    #   A 지점 · B 수량 · C 확인  |  D 간격  |  E 박스 · F 구분 · G 중량
+    wd = wb.create_sheet("원두별 분배")
+    wd.sheet_view.showGridLines = False
+    wd.merge_cells("A1:G1")
+    wd["A1"] = f"원두별 분배표  ·  발주일 {date_txt}"
+    wd["A1"].font = F(14, True, "FFFFFF"); wd["A1"].fill = fill(TERRA)
+    wd["A1"].alignment = Alignment(vertical="center", indent=1)
+    wd.row_dimensions[1].height = 28
+    wd.merge_cells("A2:G2")
+    wd["A2"] = ("원두 하나씩 꺼내 지점 박스에 나눠 담기  ·  원두 1종 = 1블록  ·  지점 순서는 발주서와 같음  ·  "
+                "(강릉) = 강릉권 지점  ·  박스 = 송장 수취인명 뒤 번호  ·  담은 뒤 ☐ 체크")
+    wd["A2"].font = F(8, False, GRAY)
+    LOCFILL = "F0DDD7"
+    COLS = [1, 2, 3, 5, 6, 7]                  # D(4)열은 간격
+    per = {}
+    for d in det:
+        for b in d["boxes"]:
+            for nm, q, kg in b["lines"]:
+                per.setdefault(nm, []).append((d, b["label"], q, kg))
+    r = 4
+    ROWS_PER_PAGE = 48                          # A4 세로, 폭 맞춤 기준 대략 행 수
+    page_used = 3
+    for nm, _w in res["products"]:
+        items = per.get(nm)
+        if not items:
+            continue
+        need = len(items) + 3
+        if page_used + need > ROWS_PER_PAGE and page_used > 3:
+            wd.row_breaks.append(Break(id=r - 1))
+            page_used = 0
+        tot_q = sum(x[2] for x in items)
+        tot_kg = round(sum(x[3] for x in items), 3)
+        n_br = len({x[0]["branch"] for x in items})
+        # 원두 제목줄: A~C 원두명 / E 총수량 / F 지점수 / G 총중량
+        wd.merge_cells(start_row=r, start_column=1, end_row=r, end_column=3)
+        wd.cell(r, 1, nm)
+        wd.cell(r, 5, f"총 {tot_q:g}개")
+        wd.cell(r, 6, f"{n_br}곳")
+        wd.cell(r, 7, f"{tot_kg:g}kg")
+        bar = TERRA if nm == auth_nm else MID
+        for c in COLS:
+            cell = wd.cell(r, c)
+            cell.fill = fill(bar)
+            cell.font = F(13 if c == 1 else 10, True, "FFFFFF")
+            cell.alignment = Alignment(horizontal="left" if c == 1 else "center", vertical="center",
+                                       indent=1 if c == 1 else 0)
+        wd.row_dimensions[r].height = 24
+        r += 1
+        for c, h in zip(COLS, ["지점", "수량(EA)", "확인", "박스", "구분", "중량(kg)"]):
+            cell = wd.cell(r, c, h)
+            cell.font = F(9, True); cell.fill = fill(LINEN); cell.alignment = center; cell.border = bd
+        r += 1
+        prev = None
+        for i, (d, label, q, kg) in enumerate(items):
+            loc = d.get("local")
+            same = prev == d["branch"]
+            vals = {1: "" if same else d["branch"] + (" (강릉)" if loc else ""), 2: q, 3: "☐",
+                    5: label, 6: "강릉" if loc else "우체국", 7: kg}
+            rf = fill(LOCFILL if loc else (CREAM if i % 2 == 0 else OFF))
+            for c in COLS:
+                cell = wd.cell(r, c, vals[c])
+                cell.fill = rf; cell.border = bd
+                cell.alignment = Alignment(horizontal="left" if c == 1 else "center", vertical="center",
+                                           indent=1 if c == 1 else 0)
+                if c == 2:
+                    cell.font = F(13, True, TERRA)
+                elif c == 3:
+                    cell.font = F(12, False, CHAR)
+                elif c == 1:
+                    cell.font = F(11, True, CHAR)
+                else:
+                    cell.font = F(9, False, GRAY)
+                if c == 7:
+                    cell.number_format = "0.##"
+            wd.row_dimensions[r].height = 19
+            prev = d["branch"]
+            r += 1
+        wd.cell(r, 1, "합계"); wd.cell(r, 2, tot_q); wd.cell(r, 7, tot_kg)
+        for c in COLS:
+            cell = wd.cell(r, c)
+            cell.fill = fill(LINEN); cell.border = bd
+            cell.font = F(10, True, TERRA)
+            cell.alignment = Alignment(horizontal="left" if c == 1 else "center", vertical="center",
+                                       indent=1 if c == 1 else 0)
+            if c == 7:
+                cell.number_format = "0.##"
+        r += 2
+        page_used += need + 1
+    for col, w in zip("ABCDEFG", [24, 11, 7, 2, 9, 8, 10]):
+        wd.column_dimensions[col].width = w
+    wd.freeze_panes = "A4"
+    wd.page_setup.orientation = "portrait"
+    wd.page_setup.paperSize = wd.PAPERSIZE_A4
+    wd.page_setup.fitToWidth = 1
+    wd.page_setup.fitToHeight = 0
+    wd.sheet_properties.pageSetUpPr.fitToPage = True
+    wd.page_margins.top = wd.page_margins.bottom = 0.4
+
     # ── ② 박스별 구성 ──
     ws2 = wb.create_sheet("박스별 구성")
     ws2.sheet_view.showGridLines = False
