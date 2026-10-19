@@ -114,6 +114,13 @@ if res["date"]:
     else:
         st.success(msg)
 
+# 발주서 점포계 대조
+if res.get("check"):
+    lines = "\n".join(f"- {n} : 발주서 점포계 {w:g} / 지점 합계 {g:g}" for n, w, g in res["check"])
+    st.error("**발주서 점포계와 지점별 합계가 다릅니다. 발주서를 확인하세요.**\n\n" + lines)
+else:
+    st.caption(f"✔ 발주서 점포계와 지점별 합계 일치 (지점 {len(res.get('branch_names', []))}곳 인식)")
+
 # 주소 미등록 경고
 if res["missing"]:
     lines = "\n".join(f"- **{b}** : 어센틱 {a:g}kg / 기타 {o:g}kg" for b, a, o in res["missing"])

@@ -142,8 +142,15 @@ def process(order_src, addr_src):
     if hrow is None:
         raise ValueError("발주서에서 '품   명' 헤더행을 찾지 못했습니다. 지점 원두 발주서가 맞는지 확인하세요.")
 
-    branches = [(c, s(ws.cell(hrow, c).value)) for c in range(12, ws.max_column + 1)
-                if s(ws.cell(hrow, c).value)]          # L열(본점)부터
+    # '점포계(EA)' 열 위치로 지점 시작 열을 찾음 (양식마다 열 위치가 달라서 고정값 사용 안 함)
+    #   예) 점포계=J → 합계=K, 본점=L  /  점포계=G → 합계=H, 본점=I
+    tcol = next((c for c in range(1, ws.max_column + 1)
+                 if s(ws.cell(hrow, c).value).replace(" ", "").startswith("점포계")), None)
+    if tcol is None:
+        raise ValueError("발주서 헤더에서 '점포계(EA)' 열을 찾지 못했습니다.")
+    total_col = tcol + 1
+    branches = [(c, s(ws.cell(hrow, c).value)) for c in range(tcol + 2, ws.max_column + 1)
+                if s(ws.cell(hrow, c).value)]
 
     auth_rows, other_rows, skipped = [], [], []
     for r in range(hrow + 1, ws.max_row + 1):
@@ -213,8 +220,19 @@ def process(order_src, addr_src):
                                boxes=boxes_detail, qty=qty))
         summary.append([bname, addr[0], a_kg, a_box, o_kg, o_box, total, "" if total else "발주없음"])
 
+    # 검증: 품목별 지점 합계 vs 발주서 점포계 열
+    check = []
+    for r in auth_rows + [r for r, _, _ in other_rows]:
+        want = ws.cell(r, total_col).value
+        if not isinstance(want, (int, float)):
+            continue
+        got = sum(num(ws.cell(r, c).value) for c, _ in branches)
+        if abs(got - want) > 1e-6:
+            check.append((s(ws.cell(r, 1).value), want, got))
+
     return dict(date=date, mmdd=mmdd, upload=upload, summary=summary,
-                skipped=skipped, missing=missing, detail=detail, products=products)
+                skipped=skipped, missing=missing, detail=detail, products=products,
+                check=check, branch_names=[b for _, b in branches])
 
 
 def build_workbook(res, src_name=""):
