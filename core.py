@@ -698,11 +698,11 @@ def build_packing(res, src_name=""):
     ws2.sheet_properties.pageSetUpPr.fitToPage = True
     ws2.print_title_rows = "3:3"
 
-    # 시트 순서: 원두별 분배 → 분배 인쇄용(A4) → 박스별 구성 → 포장표
-    wb._sheets = [wd, wp, ws2, ws]
+    # 시트 순서: 분배 인쇄용(A4) → 원두별 분배 → 박스별 구성 → 포장표
+    wb._sheets = [wp, wd, ws2, ws]
     wb.active = 0
     for sh in wb.worksheets:
-        sh.sheet_view.tabSelected = sh is wd
+        sh.sheet_view.tabSelected = sh is wp
 
     buf = io.BytesIO()
     wb.save(buf)
