@@ -559,6 +559,99 @@ def build_packing(res, src_name=""):
     wd.sheet_properties.pageSetUpPr.fitToPage = True
     wd.page_margins.top = wd.page_margins.bottom = 0.4
 
+    # ── ①-3 분배 인쇄용(A4) : 원두별 분배의 지점·수량·확인만, A4 세로 한 장에 3단으로 ──
+    wp = wb.create_sheet("분배 인쇄용(A4)")
+    wp.sheet_view.showGridLines = False
+    LANES, P = 3, 50                            # 3단, 한 장당 50행(제목 줄 제외)
+    LW = [18, 8, 5, 1.5]                        # 지점 · 수량 · 확인 · 단 간격
+    wp.merge_cells(start_row=1, start_column=1, end_row=1, end_column=LANES * 4 - 1)
+    wp.cell(1, 1, f"원두별 분배 (인쇄용)  ·  발주일 {date_txt}  ·  분홍 = 강릉")
+    wp.cell(1, 1).font = F(11, True, "FFFFFF"); wp.cell(1, 1).fill = fill(TERRA)
+    wp.cell(1, 1).alignment = Alignment(vertical="center", indent=1)
+    wp.row_dimensions[1].height = 20
+    # 블록 → 줄 목록
+    blocks = []
+    for nm, _w in res["products"]:
+        items = per.get(nm)
+        if not items:
+            continue
+        lines = [("title", nm, sum(x[2] for x in items))]
+        prev = None
+        for d, label, q, kg in items:
+            lines.append(("row", "" if prev == d["branch"] else d["branch"], q, d.get("local")))
+            prev = d["branch"]
+        lines.append(("total", "합계", sum(x[2] for x in items)))
+        blocks.append(lines)
+    # 단(lane)에 순서대로 채우기: 블록이 남은 칸에 안 들어가면 다음 단으로
+    slots, page, lane, used = [], 0, 0, 0
+    def next_lane():
+        nonlocal page, lane, used
+        lane += 1; used = 0
+        if lane == LANES:
+            lane = 0; page += 1
+    for blk in blocks:
+        if used and used + len(blk) > P:
+            next_lane()
+        rest, first = list(blk), True
+        while rest:
+            if not first:                        # 단을 넘어가면 원두 이름을 다시 표시
+                rest = [("title", blk[0][1] + " (계속)", blk[0][2])] + rest
+            room = P - used
+            chunk, rest = rest[:room], rest[room:]
+            for k, ln in enumerate(chunk):
+                slots.append((page, lane, used + k, ln))
+            used += len(chunk)
+            if rest:
+                next_lane(); first = False
+        used += 1                                # 블록 사이 한 줄 띄움
+        if used >= P:
+            next_lane()
+    for pg, ln_, off, ln in slots:
+        r = 2 + pg * P + off
+        c0 = 1 + ln_ * 4
+        kind = ln[0]
+        if kind == "title":
+            wp.merge_cells(start_row=r, start_column=c0, end_row=r, end_column=c0 + 1)
+            wp.cell(r, c0, ln[1]); wp.cell(r, c0 + 2, ln[2])
+            for c in range(c0, c0 + 3):
+                cell = wp.cell(r, c)
+                cell.fill = fill(TERRA if ln[1].startswith(auth_nm) else MID)
+                cell.font = F(8 if c == c0 else 9, True, "FFFFFF")
+                cell.alignment = Alignment(horizontal="left" if c == c0 else "center", vertical="center",
+                                           shrink_to_fit=True, indent=0)
+        elif kind == "row":
+            vals = [ln[1], ln[2], "☐"]
+            rf = fill("F0DDD7" if ln[3] else CREAM)
+            for k, v in enumerate(vals):
+                cell = wp.cell(r, c0 + k, v)
+                cell.fill = rf; cell.border = bd
+                cell.font = F(9, True, CHAR) if k == 0 else (F(11, True, TERRA) if k == 1 else F(10, False, CHAR))
+                cell.alignment = Alignment(horizontal="left" if k == 0 else "center", vertical="center",
+                                           shrink_to_fit=(k == 0))
+        else:
+            for k, v in enumerate(["합계", ln[2], None]):
+                cell = wp.cell(r, c0 + k, v)
+                cell.fill = fill(LINEN); cell.border = bd
+                cell.font = F(9, True, TERRA)
+                cell.alignment = Alignment(horizontal="left" if k == 0 else "center", vertical="center")
+    last_row = 1 + (page + (1 if used or lane else 0)) * P
+    for rr in range(2, last_row + 1):
+        wp.row_dimensions[rr].height = 15
+    for pg in range(1, page + 1):
+        wp.row_breaks.append(Break(id=1 + pg * P))
+    for k in range(LANES * 4):
+        wp.column_dimensions[L(k + 1)].width = LW[k % 4]
+    wp.print_title_rows = "1:1"
+    wp.print_area = f"A1:{L(LANES * 4 - 1)}{last_row}"
+    wp.page_setup.orientation = "portrait"
+    wp.page_setup.paperSize = wp.PAPERSIZE_A4
+    wp.page_setup.fitToWidth = 1
+    wp.page_setup.fitToHeight = 0
+    wp.sheet_properties.pageSetUpPr.fitToPage = True
+    wp.page_margins.left = wp.page_margins.right = 0.4
+    wp.page_margins.top = wp.page_margins.bottom = 0.35
+    wp.page_margins.header = wp.page_margins.footer = 0.2
+
     # ── ② 박스별 구성 ──
     ws2 = wb.create_sheet("박스별 구성")
     ws2.sheet_view.showGridLines = False
@@ -605,8 +698,8 @@ def build_packing(res, src_name=""):
     ws2.sheet_properties.pageSetUpPr.fitToPage = True
     ws2.print_title_rows = "3:3"
 
-    # 시트 순서: 원두별 분배 → 박스별 구성 → 포장표 (열면 원두별 분배가 먼저 보임)
-    wb._sheets = [wd, ws2, ws]
+    # 시트 순서: 원두별 분배 → 분배 인쇄용(A4) → 박스별 구성 → 포장표
+    wb._sheets = [wd, wp, ws2, ws]
     wb.active = 0
     for sh in wb.worksheets:
         sh.sheet_view.tabSelected = sh is wd
