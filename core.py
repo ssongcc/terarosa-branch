@@ -639,8 +639,64 @@ def build_packing(res, src_name=""):
         wp.row_dimensions[rr].height = 15
     for pg in range(1, page + 1):
         wp.row_breaks.append(Break(id=1 + pg * P))
+
+    # ── 맨 끝(새 페이지): 지점별 박스 접수 요약표 ──
+    #   A 지점 · B 총 박스 · C 확인 | E:G 어센틱 박스별 kg | I:J 기타 박스별 kg · K 총 kg
+    wp.row_breaks.append(Break(id=last_row))
+    r = last_row + 1
+    wp.merge_cells(start_row=r, start_column=1, end_row=r, end_column=11)
+    n_loc = sum(1 for d in det if d.get("local")); n_shp = len(det) - n_loc
+    wp.cell(r, 1, f"지점별 박스 접수  ·  우체국 {n_shp}곳 {len(res['upload'])}박스  +  강릉 {n_loc}곳 {loc_box}박스"
+                  f"  ·  총 {len(res['upload']) + loc_box}박스")
+    wp.cell(r, 1).font = F(11, True, "FFFFFF"); wp.cell(r, 1).fill = fill(MID)
+    wp.cell(r, 1).alignment = Alignment(vertical="center", indent=1)
+    wp.row_dimensions[r].height = 20
+    r += 1
+    heads = {1: "지점", 2: "총 박스", 3: "확인", 5: "어센틱 1kg 박스별 (kg)", 9: "기타 원두 박스별 (kg)", 11: "총 kg"}
+    for c, h in heads.items():
+        cell = wp.cell(r, c, h)
+        cell.font = F(8, True); cell.fill = fill(LINEN); cell.alignment = center; cell.border = bd
+    wp.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
+    wp.merge_cells(start_row=r, start_column=9, end_row=r, end_column=10)
+    wp.row_dimensions[r].height = 18
+    r += 1
+    for i, d in enumerate(det):
+        loc_ = d.get("local")
+        a = [f"{b['kg']:g}" for b in d["boxes"] if b["kind"] == "어센틱"]
+        o = [f"{b['kg']:g}" for b in d["boxes"] if b["kind"] != "어센틱"]
+        vals = {1: d["branch"] + (" (강릉)" if loc_ else ""), 2: len(d["boxes"]), 3: "☐",
+                5: " · ".join(a) if a else "-", 9: " · ".join(o) if o else "-",
+                11: round(d["a_kg"] + d["o_kg"], 3)}
+        rf = fill("F0DDD7" if loc_ else (CREAM if i % 2 == 0 else OFF))
+        for c in (1, 2, 3, 5, 6, 7, 9, 10, 11):
+            cell = wp.cell(r, c, vals.get(c))
+            cell.fill = rf; cell.border = bd
+            cell.alignment = Alignment(horizontal="left" if c == 1 else "center", vertical="center",
+                                       shrink_to_fit=c in (1, 5, 9), indent=0)
+            cell.font = F(11, True, TERRA) if c == 2 else (F(9, True, CHAR) if c == 1 else F(9, False, CHAR))
+            if c == 11:
+                cell.number_format = "0.##"
+        wp.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
+        wp.merge_cells(start_row=r, start_column=9, end_row=r, end_column=10)
+        wp.row_dimensions[r].height = 16
+        r += 1
+    tot_kg_all = round(sum(d["a_kg"] + d["o_kg"] for d in det), 3)
+    for c, v in {1: "합계", 2: sum(len(d["boxes"]) for d in det), 11: tot_kg_all}.items():
+        wp.cell(r, c, v)
+    for c in (1, 2, 3, 5, 6, 7, 9, 10, 11):
+        cell = wp.cell(r, c)
+        cell.fill = fill(LINEN); cell.border = bd; cell.font = F(10, True, TERRA)
+        cell.alignment = Alignment(horizontal="left" if c == 1 else "center", vertical="center")
+        if c == 11:
+            cell.number_format = "0.##"
+    wp.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
+    wp.merge_cells(start_row=r, start_column=9, end_row=r, end_column=10)
+    wp.row_dimensions[r].height = 18
+    last_row = r
+
     for k in range(LANES * 4):
         wp.column_dimensions[L(k + 1)].width = LW[k % 4]
+    wp.column_dimensions["K"].width = 7
     wp.print_title_rows = "1:1"
     wp.print_area = f"A1:{L(LANES * 4 - 1)}{last_row}"
     wp.page_setup.orientation = "portrait"
