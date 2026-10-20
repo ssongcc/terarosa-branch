@@ -4,7 +4,7 @@
 
 규칙
   1) [어센틱에스프레소블렌드 1kg] : 지점별 수량(=kg) → 15kg 기준 박스 분할(올림), 박스별 고르게 분배
-  2) 그 외 품명 뒤 중량(g/kg)이 붙은 원두 : 지점별 중량 합산 → 15kg 기준 박스 분할(올림)
+  2) 그 외 품명 뒤 중량(g/kg)이 붙은 원두 : 지점별 중량 합산 → 11kg 기준 박스 분할(올림, 부피가 커서)
   3) 1박스 = 1행, 수취인명 뒤 (박스번호/총박스)  예) (1/3) (2/3) (3/3), 1박스면 (1/1)
   4) 어센틱 박스 품목(F열) = '어센틱에스프레소블렌드1kg 10kg' 처럼 박스별 중량 표기
   5) 강릉 지점(본점·경포·임당·사천·신라모노), 주소파일에 없는 지점은 제외
@@ -13,7 +13,8 @@ import io, re, math, datetime
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-BOX_KG = 15
+BOX_KG = 15          # 어센틱에스프레소블렌드 1kg 박스 기준
+OTHER_BOX_KG = 11    # 기타 원두 박스 기준 (부피가 커서 11kg)
 AUTHENTIC = "어센틱에스프레소블렌드1kg"           # 공백 제거 후 비교
 AUTHENTIC_LABEL = "어센틱에스프레소블렌드1kg"     # 송장 품목(F열) 표기
 EXCLUDE = {"본점", "경포", "임당", "사천", "신라모노"}
@@ -45,9 +46,9 @@ def num(v):
         return 0.0
 
 
-def boxes(kg):
+def boxes(kg, cap=BOX_KG):
     kg = round(kg, 6)
-    return math.ceil(kg / BOX_KG - 1e-9) if kg > 0 else 0
+    return math.ceil(kg / cap - 1e-9) if kg > 0 else 0
 
 
 def split_even(kg, n):
@@ -93,11 +94,11 @@ def match_address(header, addrs):
 
 def allocate_other(items, n):
     """
-    기타 원두를 n박스에 배분 (박스당 15kg 이하).
+    기타 원두를 n박스에 배분 (박스당 OTHER_BOX_KG 이하).
     items: [(품명, 단위kg, 수량)] → [[(품명, 수량, kg), ...], ...]
     같은 품목은 가능한 한 한 박스에 통째로 넣고, 넘칠 때만 나눠 담음. 자리가 없으면 박스 추가.
     """
-    cap = int(BOX_KG * 1000)
+    cap = int(OTHER_BOX_KG * 1000)
     bx = [dict() for _ in range(max(n, 1))]
     load = [0] * len(bx)
     order = sorted(items, key=lambda x: -round(x[1] * 1000) * x[2])
@@ -181,7 +182,7 @@ def process(order_src, addr_src):
     for c, bname in branches:
         a_kg = round(sum(num(ws.cell(r, c).value) for r in auth_rows), 6)
         o_kg = round(sum(num(ws.cell(r, c).value) * w for r, w, _ in other_rows), 6)
-        a_box, o_box = boxes(a_kg), boxes(o_kg)
+        a_box, o_box = boxes(a_kg), boxes(o_kg, OTHER_BOX_KG)
 
         # 박스 구성: 어센틱(고르게 분배) → 기타(품목별 배분)  ※ 강릉 지점도 포장표용으로 동일 계산
         a_split = split_even(a_kg, a_box)
@@ -266,7 +267,7 @@ def build_workbook(res, src_name=""):
     ws2["A1"].fill = PatternFill("solid", fgColor=TERRA)
     ws2.row_dimensions[1].height = 26
     ws2.merge_cells("A2:H2")
-    ws2["A2"] = "기준: 15kg/박스 올림 · 어센틱에스프레소블렌드 1kg 별도 박스(고르게 분배) · 그 외 중량표기 원두 합산"
+    ws2["A2"] = "기준: 어센틱에스프레소블렌드 1kg 15kg/박스(별도·고르게 분배) · 그 외 중량표기 원두 합산 11kg/박스 · 올림"
     ws2["A2"].font = Font(name="맑은 고딕", size=9, color="6B6056")
     ws2.append([])
     ws2.append(["발주서 지점", "수취인명", "어센틱1kg(kg)", "어센틱 박스", "기타원두(kg)", "기타 박스", "총 박스", "비고"])
@@ -743,7 +744,7 @@ def build_packing(res, src_name=""):
                     if c in (6, 7):
                         cell.number_format = "0.##"
                 r += 1
-    ws2.cell(r + 1, 1, "※ 박스마다 15kg 이하 · 같은 원두는 가능한 한 한 박스에 담도록 배분").font = F(8, False, GRAY)
+    ws2.cell(r + 1, 1, "※ 어센틱 박스 15kg 이하 · 기타 원두 박스 11kg 이하 · 같은 원두는 가능한 한 한 박스에 담도록 배분").font = F(8, False, GRAY)
     for col, w in zip("ABCDEFGH", [15, 7, 9, 34, 9, 9, 12, 6]):
         ws2.column_dimensions[col].width = w
     ws2.freeze_panes = "A4"
