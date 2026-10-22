@@ -579,7 +579,12 @@ def build_packing(res, src_name=""):
         lines = [("title", nm, sum(x[2] for x in items))]
         prev = None
         for d, label, q, kg in items:
-            lines.append(("row", "" if prev == d["branch"] else d["branch"], q, d.get("local")))
+            if d.get("local") and prev == d["branch"]:
+                # 강릉권은 박스(무게)로 행을 나누지 않고 지점당 1행으로 합산
+                kind, nm_, q0, loc0 = lines[-1]
+                lines[-1] = (kind, nm_, q0 + q, loc0)
+            else:
+                lines.append(("row", "" if prev == d["branch"] else d["branch"], q, d.get("local")))
             prev = d["branch"]
         lines.append(("total", "합계", sum(x[2] for x in items)))
         blocks.append(lines)
