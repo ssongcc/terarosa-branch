@@ -565,7 +565,7 @@ def build_packing(res, src_name=""):
     wp.sheet_view.showGridLines = False
     LANES, P = 3, 50                            # 3단, 한 장당 50행(제목 줄 제외)
     LW = [18, 8, 5, 1.5]                        # 지점 · 수량 · 확인 · 단 간격
-    wp.merge_cells(start_row=1, start_column=1, end_row=1, end_column=LANES * 4 - 1)
+    wp.merge_cells(start_row=1, start_column=1, end_row=1, end_column=LANES * 4)
     wp.cell(1, 1, f"원두별 분배 (인쇄용)  ·  발주일 {date_txt}  ·  분홍 = 강릉")
     wp.cell(1, 1).font = F(11, True, "FFFFFF"); wp.cell(1, 1).fill = fill(TERRA)
     wp.cell(1, 1).alignment = Alignment(vertical="center", indent=1)
@@ -647,10 +647,10 @@ def build_packing(res, src_name=""):
         wp.row_breaks.append(Break(id=1 + pg * P))
 
     # ── 맨 끝(새 페이지): 지점별 박스 접수 요약표 ──
-    #   A 지점 · B 총 박스 · C 확인 | E:G 어센틱 박스별 kg | I:J 기타 박스별 kg · K 총 kg
+    #   A 지점 · B 총 박스 · C 확인 | E:G 어센틱 박스별 kg | I:J 기타 박스별 kg · K 총 kg · L 기타 kg(어센틱 1kg 제외)
     wp.row_breaks.append(Break(id=last_row))
     r = last_row + 1
-    wp.merge_cells(start_row=r, start_column=1, end_row=r, end_column=11)
+    wp.merge_cells(start_row=r, start_column=1, end_row=r, end_column=12)
     n_loc = sum(1 for d in det if d.get("local")); n_shp = len(det) - n_loc
     wp.cell(r, 1, f"지점별 박스 접수  ·  우체국 {n_shp}곳 {len(res['upload'])}박스  +  강릉 {n_loc}곳 {loc_box}박스"
                   f"  ·  총 {len(res['upload']) + loc_box}박스")
@@ -658,7 +658,7 @@ def build_packing(res, src_name=""):
     wp.cell(r, 1).alignment = Alignment(vertical="center", indent=1)
     wp.row_dimensions[r].height = 20
     r += 1
-    heads = {1: "지점", 2: "총 박스", 3: "확인", 5: "어센틱 1kg 박스별 (kg)", 9: "기타 원두 박스별 (kg)", 11: "총 kg"}
+    heads = {1: "지점", 2: "총 박스", 3: "확인", 5: "어센틱 1kg 박스별 (kg)", 9: "기타 원두 박스별 (kg)", 11: "총 kg", 12: "기타 kg"}
     for c, h in heads.items():
         cell = wp.cell(r, c, h)
         cell.font = F(8, True); cell.fill = fill(LINEN); cell.alignment = center; cell.border = bd
@@ -672,28 +672,29 @@ def build_packing(res, src_name=""):
         o = [f"{b['kg']:g}" for b in d["boxes"] if b["kind"] != "어센틱"]
         vals = {1: d["branch"] + (" (강릉)" if loc_ else ""), 2: len(d["boxes"]), 3: "☐",
                 5: " · ".join(a) if a else "-", 9: " · ".join(o) if o else "-",
-                11: round(d["a_kg"] + d["o_kg"], 3)}
+                11: round(d["a_kg"] + d["o_kg"], 3), 12: round(d["o_kg"], 3)}
         rf = fill("F0DDD7" if loc_ else (CREAM if i % 2 == 0 else OFF))
-        for c in (1, 2, 3, 5, 6, 7, 9, 10, 11):
+        for c in (1, 2, 3, 5, 6, 7, 9, 10, 11, 12):
             cell = wp.cell(r, c, vals.get(c))
             cell.fill = rf; cell.border = bd
             cell.alignment = Alignment(horizontal="left" if c == 1 else "center", vertical="center",
                                        shrink_to_fit=c in (1, 5, 9), indent=0)
             cell.font = F(11, True, TERRA) if c == 2 else (F(9, True, CHAR) if c == 1 else F(9, False, CHAR))
-            if c == 11:
+            if c in (11, 12):
                 cell.number_format = "0.##"
         wp.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
         wp.merge_cells(start_row=r, start_column=9, end_row=r, end_column=10)
         wp.row_dimensions[r].height = 16
         r += 1
     tot_kg_all = round(sum(d["a_kg"] + d["o_kg"] for d in det), 3)
-    for c, v in {1: "합계", 2: sum(len(d["boxes"]) for d in det), 11: tot_kg_all}.items():
+    tot_o_all = round(sum(d["o_kg"] for d in det), 3)
+    for c, v in {1: "합계", 2: sum(len(d["boxes"]) for d in det), 11: tot_kg_all, 12: tot_o_all}.items():
         wp.cell(r, c, v)
-    for c in (1, 2, 3, 5, 6, 7, 9, 10, 11):
+    for c in (1, 2, 3, 5, 6, 7, 9, 10, 11, 12):
         cell = wp.cell(r, c)
         cell.fill = fill(LINEN); cell.border = bd; cell.font = F(10, True, TERRA)
         cell.alignment = Alignment(horizontal="left" if c == 1 else "center", vertical="center")
-        if c == 11:
+        if c in (11, 12):
             cell.number_format = "0.##"
     wp.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
     wp.merge_cells(start_row=r, start_column=9, end_row=r, end_column=10)
@@ -703,8 +704,9 @@ def build_packing(res, src_name=""):
     for k in range(LANES * 4):
         wp.column_dimensions[L(k + 1)].width = LW[k % 4]
     wp.column_dimensions["K"].width = 7
+    wp.column_dimensions["L"].width = 7          # 접수표 기타 kg 열
     wp.print_title_rows = "1:1"
-    wp.print_area = f"A1:{L(LANES * 4 - 1)}{last_row}"
+    wp.print_area = f"A1:{L(LANES * 4)}{last_row}"
     wp.page_setup.orientation = "portrait"
     wp.page_setup.paperSize = wp.PAPERSIZE_A4
     wp.page_setup.fitToWidth = 1
@@ -713,6 +715,100 @@ def build_packing(res, src_name=""):
     wp.page_margins.left = wp.page_margins.right = 0.4
     wp.page_margins.top = wp.page_margins.bottom = 0.35
     wp.page_margins.header = wp.page_margins.footer = 0.2
+
+    # ── ①-4 지점별 체크표(A4) : 예비 박스(지점당 1개) 체크 → 출고 박스로 옮기기 ──
+    wc = wb.create_sheet("지점별 체크표(A4)")
+    wc.sheet_view.showGridLines = False
+    CL, CP = 2, 46                               # 2단, 한 장당 46행 (A4 한 장에 들어가는 높이)
+    CW = [37, 8, 6, 2]                           # 품명 · 수량 · 확인 · 간격
+    wc.merge_cells(start_row=1, start_column=1, end_row=1, end_column=CL * 4 - 1)
+    wc.cell(1, 1, f"지점별 체크표 (예비 박스 확인)  ·  발주일 {date_txt}  ·  담은 사람 ≠ 확인한 사람")
+    wc.cell(1, 1).font = F(11, True, "FFFFFF"); wc.cell(1, 1).fill = fill(TERRA)
+    wc.cell(1, 1).alignment = Alignment(vertical="center", indent=1)
+    wc.row_dimensions[1].height = 20
+    cards = []
+    for d in det:
+        agg = {}
+        for b in d["boxes"]:
+            for nm, q, kg in b["lines"]:
+                agg[nm] = agg.get(nm, 0) + q
+        lines = [(nm, agg[nm]) for nm, _ in res["products"] if nm in agg]
+        a = [f"{b['kg']:g}" for b in d["boxes"] if b["kind"] == "어센틱"]
+        o = [f"{b['kg']:g}" for b in d["boxes"] if b["kind"] != "어센틱"]
+        parts = ([f"어센틱 {' · '.join(a)}"] if a else []) + ([f"기타 {' · '.join(o)}"] if o else [])
+        cards.append(dict(name=d["branch"] + (" (강릉)" if d.get("local") else ""), local=d.get("local"),
+                          bag=sum(agg.values()), nbox=len(d["boxes"]),
+                          boxes=" / ".join(parts) + " kg", lines=lines))
+    slots, pg_, ln_, used_ = [], 0, 0, 0
+    def _next():
+        nonlocal pg_, ln_, used_
+        ln_ += 1; used_ = 0
+        if ln_ == CL:
+            ln_ = 0; pg_ += 1
+    for cd in cards:
+        need = len(cd["lines"]) + 3              # 제목 + 박스구성 + 품목 + 확인자
+        if used_ and used_ + need > CP:
+            _next()
+        slots.append((pg_, ln_, used_, cd))
+        used_ += need + 1
+        if used_ >= CP:
+            _next()
+    for pg, ln, off, cd in slots:
+        r = 2 + pg * CP + off
+        c0 = 1 + ln * 4
+        bar = fill("A0622A" if cd["local"] else TERRA)
+        wc.merge_cells(start_row=r, start_column=c0, end_row=r, end_column=c0 + 1)
+        wc.cell(r, c0, f"{cd['name']}   ·   총 {cd['bag']:g}봉")
+        wc.cell(r, c0 + 2, "☐")
+        for c in range(c0, c0 + 3):
+            cell = wc.cell(r, c)
+            cell.fill = bar; cell.font = F(12 if c == c0 else 11, True, "FFFFFF")
+            cell.alignment = Alignment(horizontal="left" if c == c0 else "center", vertical="center",
+                                       indent=1 if c == c0 else 0)
+        wc.row_dimensions[r].height = 20
+        r1 = r + 1
+        wc.merge_cells(start_row=r1, start_column=c0, end_row=r1, end_column=c0 + 2)
+        wc.cell(r1, c0, f"출고 {cd['nbox']}박스  ·  {cd['boxes']}")
+        for c in range(c0, c0 + 3):
+            cell = wc.cell(r1, c)
+            cell.fill = fill(PEAK); cell.border = bd; cell.font = F(9, True, TERRA)
+            cell.alignment = Alignment(horizontal="left", vertical="center", indent=1, shrink_to_fit=True)
+        for i, (nm, q) in enumerate(cd["lines"]):
+            rr = r1 + 1 + i
+            rf = fill("F0DDD7" if cd["local"] else (CREAM if i % 2 == 0 else OFF))
+            for k, v in enumerate([nm, q, "☐"]):
+                cell = wc.cell(rr, c0 + k, v)
+                cell.fill = rf; cell.border = bd
+                cell.font = F(10, False, CHAR) if k == 0 else (F(12, True, TERRA) if k == 1 else F(11, False, CHAR))
+                cell.alignment = Alignment(horizontal="left" if k == 0 else "center", vertical="center",
+                                           shrink_to_fit=(k == 0), indent=1 if k == 0 else 0)
+            wc.row_dimensions[rr].height = 17
+        rf_ = r1 + 1 + len(cd["lines"])
+        wc.merge_cells(start_row=rf_, start_column=c0, end_row=rf_, end_column=c0 + 2)
+        wc.cell(rf_, c0, "확인자 :  ______________")
+        for c in range(c0, c0 + 3):
+            cell = wc.cell(rf_, c)
+            cell.fill = fill(LINEN); cell.border = bd; cell.font = F(10, True, CHAR)
+            cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        wc.row_dimensions[rf_].height = 20
+    c_last = 1 + (pg_ + (1 if used_ or ln_ else 0)) * CP
+    for rr in range(2, c_last + 1):
+        if wc.row_dimensions[rr].height is None:
+            wc.row_dimensions[rr].height = 15
+    for pg in range(1, pg_ + 1):
+        wc.row_breaks.append(Break(id=1 + pg * CP))
+    for k in range(CL * 4):
+        wc.column_dimensions[L(k + 1)].width = CW[k % 4]
+    wc.print_title_rows = "1:1"
+    wc.print_area = f"A1:{L(CL * 4 - 1)}{c_last}"
+    wc.page_setup.orientation = "portrait"
+    wc.page_setup.paperSize = wc.PAPERSIZE_A4
+    wc.page_setup.fitToWidth = 1
+    wc.page_setup.fitToHeight = 0
+    wc.sheet_properties.pageSetUpPr.fitToPage = True
+    wc.page_margins.left = wc.page_margins.right = 0.4
+    wc.page_margins.top = wc.page_margins.bottom = 0.35
+    wc.page_margins.header = wc.page_margins.footer = 0.2
 
     # ── ② 박스별 구성 ──
     ws2 = wb.create_sheet("박스별 구성")
@@ -760,8 +856,8 @@ def build_packing(res, src_name=""):
     ws2.sheet_properties.pageSetUpPr.fitToPage = True
     ws2.print_title_rows = "3:3"
 
-    # 시트 순서: 분배 인쇄용(A4) → 원두별 분배 → 박스별 구성 → 포장표
-    wb._sheets = [wp, wd, ws2, ws]
+    # 시트 순서: 분배 인쇄용(A4) → 지점별 체크표(A4) → 원두별 분배 → 박스별 구성 → 포장표
+    wb._sheets = [wp, wc, wd, ws2, ws]
     wb.active = 0
     for sh in wb.worksheets:
         sh.sheet_view.tabSelected = sh is wp
