@@ -26,7 +26,14 @@ ALIAS = {
     "스타필드하남": "스타필드하남", "청주": "청주지웰", "교육서비스": "교육서비스",
     "IFC": "IFC몰", "현대송도": "현대아울렛송도", "현대동대문": "현대아울렛동대문",
     "성수": "성수", "신세계대구": "신세계대구", "청량리": "청량리",
+    "성수(교육)": "더서울하우스오브점(성수)",    # 2026-11 신규: 성수(교육) → 더서울하우스오브점(성수) 주소로 발송
 }
+# 같은 주소로 가는 지점이 둘 이상일 때 송장 수취인명 뒤에 붙여 구분 (예: …더서울하우스오브점(성수)교육(1/1))
+RECV_TAG = {"성수(교육)": "교육"}
+
+
+def _norm(h):
+    return h.replace(" ", "").replace("（", "(").replace("）", ")")
 WEIGHT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(kg|g)", re.I)
 HEADERS = ["수취인명", "우편번호", "상세주소", "연락처 1 일반전화", "연락처 2 휴대폰", "품목", "메모"]
 
@@ -85,7 +92,7 @@ def load_addresses(src):
 
 
 def match_address(header, addrs):
-    key = ALIAS.get(header, header)
+    key = ALIAS.get(header, ALIAS.get(_norm(header), header))   # '성수 (교육)'·전각 괄호도 인식
     hits = [a for a in addrs if key in a[0].replace("[[원두]테라로사", "")]
     if len(hits) == 1:
         return hits[0], ""
@@ -213,13 +220,14 @@ def process(order_src, addr_src):
                 missing.append((bname, a_kg, o_kg))
             summary.append([bname, "", a_kg, a_box, o_kg, o_box, 0, note])
             continue
+        recv = addr[0] + RECV_TAG.get(_norm(bname), "")
         for b, (kind, _, q) in zip(boxes_detail, box_list):
             item = f"{AUTHENTIC_LABEL} {q:g}kg" if kind == "어센틱" else addr[5]
-            upload.append([f"{addr[0]}{b['label']}"] + addr[1:5] + [item, addr[6]])
+            upload.append([f"{recv}{b['label']}"] + addr[1:5] + [item, addr[6]])
         if total:
-            detail.append(dict(branch=bname, recv=addr[0], a_kg=a_kg, o_kg=o_kg, local=False,
+            detail.append(dict(branch=bname, recv=recv, a_kg=a_kg, o_kg=o_kg, local=False,
                                boxes=boxes_detail, qty=qty))
-        summary.append([bname, addr[0], a_kg, a_box, o_kg, o_box, total, "" if total else "발주없음"])
+        summary.append([bname, recv, a_kg, a_box, o_kg, o_box, total, "" if total else "발주없음"])
 
     # 검증: 품목별 지점 합계 vs 발주서 점포계 열
     check = []
