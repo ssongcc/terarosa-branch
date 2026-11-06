@@ -15,6 +15,9 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 BOX_KG = 15          # 어센틱에스프레소블렌드 1kg 박스 기준
 OTHER_BOX_KG = 12.3  # 기타 원두 박스 기준 (부피 때문에 12.3kg, 250g 48봉=12kg · 1022 실측 반영)
+# 기타 원두 박스에 쓸 빈 박스 크기: 박스 중량(kg)이 상한 이하이면 그 크기 박스 (분배 인쇄용 접수표 '필요 박스')
+BOX_SIZE_RULE = [(5, 5), (10, 10), (99, 15)]   # (중량 상한 kg, 박스 크기 kg)
+NO_BOX = {"본점"}                               # 필요 박스 계산에서 빼는 지점
 AUTHENTIC = "어센틱에스프레소블렌드1kg"           # 공백 제거 후 비교
 AUTHENTIC_LABEL = "어센틱에스프레소블렌드1kg"     # 송장 품목(F열) 표기
 EXCLUDE = {"본점", "경포", "임당", "사천", "신라모노"}
@@ -573,7 +576,7 @@ def build_packing(res, src_name=""):
     wp.sheet_view.showGridLines = False
     LANES, P = 3, 50                            # 3단, 한 장당 50행(제목 줄 제외)
     LW = [18, 8, 5, 1.5]                        # 지점 · 수량 · 확인 · 단 간격
-    wp.merge_cells(start_row=1, start_column=1, end_row=1, end_column=LANES * 4)
+    wp.merge_cells(start_row=1, start_column=1, end_row=1, end_column=LANES * 4 + 1)
     wp.cell(1, 1, f"원두별 분배 (인쇄용)  ·  발주일 {date_txt}  ·  분홍 = 강릉")
     wp.cell(1, 1).font = F(11, True, "FFFFFF"); wp.cell(1, 1).fill = fill(TERRA)
     wp.cell(1, 1).alignment = Alignment(vertical="center", indent=1)
@@ -656,9 +659,27 @@ def build_packing(res, src_name=""):
 
     # ── 맨 끝(새 페이지): 지점별 박스 접수 요약표 ──
     #   A 지점 · B 총 박스 · C 확인 | E:G 어센틱 박스별 kg | I:J 기타 박스별 kg · K 총 kg · L 기타 kg(어센틱 1kg 제외)
+    #   · M 필요 박스(기타 원두 박스 → 5/10/15kg 빈 박스 크기)
+    def box_size(kg):
+        return next(sz for lim, sz in BOX_SIZE_RULE if kg <= lim + 1e-9)
+    need_tot = {}                                # 박스 크기 → 개수 (전체)
+    def need_text(d):
+        if d["branch"] in NO_BOX:
+            return f"{d['branch']} 제외"
+        cnt = {}
+        for b in d["boxes"]:
+            if b["kind"] != "어센틱":
+                sz = box_size(b["kg"]); cnt[sz] = cnt.get(sz, 0) + 1
+                need_tot[sz] = need_tot.get(sz, 0) + 1
+        if not cnt:
+            return "-"
+        if len(cnt) == 1:
+            (sz, n), = cnt.items()
+            return f"{sz}" if n == 1 else f"{sz}*{n}"
+        return ", ".join(f"{sz}*{n}" for sz, n in sorted(cnt.items(), reverse=True))
     wp.row_breaks.append(Break(id=last_row))
     r = last_row + 1
-    wp.merge_cells(start_row=r, start_column=1, end_row=r, end_column=12)
+    wp.merge_cells(start_row=r, start_column=1, end_row=r, end_column=13)
     n_loc = sum(1 for d in det if d.get("local")); n_shp = len(det) - n_loc
     wp.cell(r, 1, f"지점별 박스 접수  ·  우체국 {n_shp}곳 {len(res['upload'])}박스  +  강릉 {n_loc}곳 {loc_box}박스"
                   f"  ·  총 {len(res['upload']) + loc_box}박스")
@@ -666,7 +687,7 @@ def build_packing(res, src_name=""):
     wp.cell(r, 1).alignment = Alignment(vertical="center", indent=1)
     wp.row_dimensions[r].height = 20
     r += 1
-    heads = {1: "지점", 2: "총 박스", 3: "확인", 5: "어센틱 1kg 박스별 (kg)", 9: "기타 원두 박스별 (kg)", 11: "총 kg", 12: "기타 kg"}
+    heads = {1: "지점", 2: "총 박스", 3: "확인", 5: "어센틱 1kg 박스별 (kg)", 9: "기타 원두 박스별 (kg)", 11: "총 kg", 12: "기타 kg", 13: "필요 박스"}
     for c, h in heads.items():
         cell = wp.cell(r, c, h)
         cell.font = F(8, True); cell.fill = fill(LINEN); cell.alignment = center; cell.border = bd
@@ -680,14 +701,15 @@ def build_packing(res, src_name=""):
         o = [f"{b['kg']:g}" for b in d["boxes"] if b["kind"] != "어센틱"]
         vals = {1: d["branch"] + (" (강릉)" if loc_ else ""), 2: len(d["boxes"]), 3: "☐",
                 5: " · ".join(a) if a else "-", 9: " · ".join(o) if o else "-",
-                11: round(d["a_kg"] + d["o_kg"], 3), 12: round(d["o_kg"], 3)}
+                11: round(d["a_kg"] + d["o_kg"], 3), 12: round(d["o_kg"], 3),
+                13: need_text(d)}
         rf = fill("F0DDD7" if loc_ else (CREAM if i % 2 == 0 else OFF))
-        for c in (1, 2, 3, 5, 6, 7, 9, 10, 11, 12):
+        for c in (1, 2, 3, 5, 6, 7, 9, 10, 11, 12, 13):
             cell = wp.cell(r, c, vals.get(c))
             cell.fill = rf; cell.border = bd
             cell.alignment = Alignment(horizontal="left" if c == 1 else "center", vertical="center",
-                                       shrink_to_fit=c in (1, 5, 9), indent=0)
-            cell.font = F(11, True, TERRA) if c == 2 else (F(9, True, CHAR) if c == 1 else F(9, False, CHAR))
+                                       shrink_to_fit=c in (1, 5, 9, 13), indent=0)
+            cell.font = F(11, True, TERRA) if c == 2 else (F(9, True, CHAR) if c in (1, 13) else F(9, False, CHAR))
             if c in (11, 12):
                 cell.number_format = "0.##"
         wp.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
@@ -696,9 +718,11 @@ def build_packing(res, src_name=""):
         r += 1
     tot_kg_all = round(sum(d["a_kg"] + d["o_kg"] for d in det), 3)
     tot_o_all = round(sum(d["o_kg"] for d in det), 3)
-    for c, v in {1: "합계", 2: sum(len(d["boxes"]) for d in det), 11: tot_kg_all, 12: tot_o_all}.items():
+    n_need = sum(need_tot.values())
+    for c, v in {1: "합계", 2: sum(len(d["boxes"]) for d in det), 11: tot_kg_all, 12: tot_o_all,
+                 13: f"{n_need}개"}.items():
         wp.cell(r, c, v)
-    for c in (1, 2, 3, 5, 6, 7, 9, 10, 11, 12):
+    for c in (1, 2, 3, 5, 6, 7, 9, 10, 11, 12, 13):
         cell = wp.cell(r, c)
         cell.fill = fill(LINEN); cell.border = bd; cell.font = F(10, True, TERRA)
         cell.alignment = Alignment(horizontal="left" if c == 1 else "center", vertical="center")
@@ -707,14 +731,23 @@ def build_packing(res, src_name=""):
     wp.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)
     wp.merge_cells(start_row=r, start_column=9, end_row=r, end_column=10)
     wp.row_dimensions[r].height = 18
+    # 필요 박스 크기별 합계 (빈 박스 준비용)
+    r += 1
+    wp.merge_cells(start_row=r, start_column=1, end_row=r, end_column=13)
+    sizes = "   ·   ".join(f"{sz}kg 박스 {need_tot[sz]}개" for sz in sorted(need_tot))
+    wp.cell(r, 1, f"필요 박스 (기타 원두, {'·'.join(sorted(NO_BOX))} 제외)   :   {sizes}   =   총 {n_need}개")
+    wp.cell(r, 1).font = F(11, True, "FFFFFF"); wp.cell(r, 1).fill = fill(TERRA)
+    wp.cell(r, 1).alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    wp.row_dimensions[r].height = 22
     last_row = r
 
     for k in range(LANES * 4):
         wp.column_dimensions[L(k + 1)].width = LW[k % 4]
     wp.column_dimensions["K"].width = 7
     wp.column_dimensions["L"].width = 7          # 접수표 기타 kg 열
+    wp.column_dimensions["M"].width = 10         # 접수표 필요 박스 열
     wp.print_title_rows = "1:1"
-    wp.print_area = f"A1:{L(LANES * 4)}{last_row}"
+    wp.print_area = f"A1:{L(LANES * 4 + 1)}{last_row}"
     wp.page_setup.orientation = "portrait"
     wp.page_setup.paperSize = wp.PAPERSIZE_A4
     wp.page_setup.fitToWidth = 1
